@@ -1,0 +1,5 @@
+
+*.png
+Bambi/checkpoints/default/lightning_logs
+
+Bambi/checkpoints/load/detr_model_05-30-13_22.ckpt
