@@ -12,13 +12,14 @@ from pytorch_lightning import Trainer
 from tqdm.notebook import tqdm
 from datetime import datetime
 
+
+# config
 lr=1e-4
 lr_backbone=1e-5
 weight_decay=1e-4
-batch_size=64
-num_steps=500
+batch_size=32
+num_steps=50000
 
-# config
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
@@ -43,7 +44,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 
-print(os.getcwd())
+
 img_folder = "./Bambi/data"
 ann_folder = "./Bambi/data/annotations"
 
@@ -65,7 +66,7 @@ print("Number of validation examples:", len(val_dataset))
 image_ids = train_dataset.coco.getImgIds()
 # let's pick a random image
 image_id = image_ids[np.random.randint(0, len(image_ids))]
-print('Image n°{}'.format(image_id))
+#print('Image n°{}'.format(image_id))
 image = train_dataset.coco.loadImgs(image_id)[0]
 image = Image.open(os.path.join(f'{img_folder}/train', image['file_name']))
 
@@ -97,13 +98,13 @@ def collate_fn(batch):
   return batch
 
 train_dataloader = DataLoader(train_dataset, collate_fn=collate_fn, batch_size=batch_size, shuffle=True)
-val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=8)
+val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=batch_size)
 batch = next(iter(train_dataloader))
 
 
 
 pixel_values, target = train_dataset[0]
-print(train_dataset[0])
+#print(train_dataset[0])
 
 
 
@@ -160,7 +161,8 @@ class Detr(pl.LightningModule):
         self.log("validation_loss", loss)
         for k,v in loss_dict.items():
           self.log("validation_" + k, v.item())
-
+          
+        print("Validationsloss: ", loss)
         return loss
 
      def configure_optimizers(self):
@@ -197,7 +199,7 @@ outputs = model(pixel_values=batch['pixel_values'], pixel_mask=batch['pixel_mask
 
 
 #gpus=1, 
-trainer = Trainer(max_steps=num_steps, gradient_clip_val=0.1, default_root_dir = "./drive/MyDrive/Bambi/checkpoints/default")
+trainer = Trainer(max_steps=num_steps, gradient_clip_val=0.1, default_root_dir = "./Bambi/checkpoints/default")
 trainer.fit(model)
 
 
@@ -208,11 +210,17 @@ dateStr = (today.strftime("%m/%d/")
 
 dateStr = dateStr.replace("/", "-")
 
-trainer.save_checkpoint("./Bambi/checkpoints/detr_model_" 
+
+
+trainer.save_checkpoint("./Bambi/checkpoints/detr_model_epoch:"
+      + str(trainer.current_epoch)
+      + "_"
       + dateStr
       + ".ckpt")
 
 
+import subprocess
+subprocess.run("nvidia-smi")
 
 
 
