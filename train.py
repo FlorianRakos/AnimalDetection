@@ -20,7 +20,8 @@ weight_decay=1e-4
 batch_size=32
 num_steps=50000
 
-
+img_folder = "./Bambi/data"
+ann_folder = "./Bambi/data/annotations"
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
@@ -43,10 +44,6 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 
-
-
-img_folder = "./Bambi/data"
-ann_folder = "./Bambi/data/annotations"
 
 feature_extractor = DetrFeatureExtractor.from_pretrained("facebook/detr-resnet-50")
 
@@ -161,7 +158,7 @@ class Detr(pl.LightningModule):
         self.log("validation_loss", loss)
         for k,v in loss_dict.items():
           self.log("validation_" + k, v.item())
-          
+
         print("Validationsloss: ", loss)
         return loss
 
@@ -228,63 +225,3 @@ subprocess.run("nvidia-smi")
 
 
 
-#clone repository for evaluation
-
-# !nvidia-smi
-# !git clone https://github.com/facebookresearch/detr.git
-# %cd detr
-
-
-# # -------------- Evaluation -------------- #
-# print (os.getcwd())
-
-# from datasets import get_coco_api_from_dataset
-
-# base_ds = get_coco_api_from_dataset(val_dataset) # this is actually just calling the coco attribute
-
-
-
-# from datasets.coco_eval import CocoEvaluator
-# from tqdm.notebook import tqdm
-
-# #%cd ..
-
-# iou_types = ['bbox']
-# coco_evaluator = CocoEvaluator(base_ds, iou_types) # initialize evaluator with ground truths
-
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# loadModel = True
-
-# if (loadModel):
-#   loadDir = "/content/drive/MyDrive/Bambi/checkpoints/load"
-#   files = os.listdir(loadDir)
-
-#   if (len(files) > 1):
-#     raise Exception("Only 1 file allowed in folder")
-
-#   print(files)
-#   model = Detr.load_from_checkpoint(loadDir + "/" + files[0], lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
-# else:
-#   model.to(device)
-#   model.eval()
-
-# print("Running evaluation...")
-
-# for idx, batch in enumerate(tqdm(val_dataloader)):
-#     # get the inputs
-#     pixel_values = batch["pixel_values"].to(device)
-#     pixel_mask = batch["pixel_mask"].to(device)
-#     labels = [{k: v.to(device) for k, v in t.items()} for t in batch["labels"]] # these are in DETR format, resized + normalized
-
-#     # forward pass
-#     outputs = model.model(pixel_values=pixel_values, pixel_mask=pixel_mask)
-
-#     orig_target_sizes = torch.stack([target["orig_size"] for target in labels], dim=0)
-#     results = feature_extractor.post_process(outputs, orig_target_sizes) # convert outputs of model to COCO api
-#     res = {target['image_id'].item(): output for target, output in zip(labels, results)}
-#     coco_evaluator.update(res)
-
-# coco_evaluator.synchronize_between_processes()
-# coco_evaluator.accumulate()
-# coco_evaluator.summarize()
