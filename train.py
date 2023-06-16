@@ -11,17 +11,22 @@ import torch
 from pytorch_lightning import Trainer
 from tqdm.notebook import tqdm
 from datetime import datetime
+from pytorch_lightning.callbacks import ModelCheckpoint
 
+torch.set_float32_matmul_precision("high")
 
 # config
+# 50000steps = 600 epochs
+
 lr=1e-4
 lr_backbone=1e-5
 weight_decay=1e-4
 batch_size=32
-num_steps=50000
+num_steps=1000
 
 img_folder = "./Bambi/data"
 ann_folder = "./Bambi/data/annotations"
+checkpoint_dir = "./Bambi/checkpoints"
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
@@ -52,10 +57,8 @@ val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=fe
 
 
 
-print("Number of training examples:", len(train_dataset))
-print("Number of validation examples:", len(val_dataset))
-
-
+# print("Number of training examples:", len(train_dataset))
+# print("Number of validation examples:", len(val_dataset))
 
 
 
@@ -83,7 +86,7 @@ for annotation in annotations:
 
 
 
-
+# prepares the batch data
 def collate_fn(batch):
   pixel_values = [item[0] for item in batch]
   encoding = feature_extractor.pad_and_create_pixel_mask(pixel_values, return_tensors="pt")
@@ -110,21 +113,25 @@ pixel_values, target = train_dataset[0]
 class Detr(pl.LightningModule):
 
      def __init__(self, lr, lr_backbone, weight_decay):
-         super().__init__()
-         # replace COCO classification head with custom head
+          super().__init__()
 
-         # evtl deep copy zum laden von model
-         # model.state_dict()
-         # torch.save()
-         # model = LitModel.load_from_checkpoint(PATH)
+          self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
+                                                              num_labels=len(id2label),
+                                                              ignore_mismatched_sizes=True)
+          self.lr = lr
+          self.lr_backbone = lr_backbone
+          self.weight_decay = weight_decay
 
-         self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
-                                                             num_labels=len(id2label),
-                                                             ignore_mismatched_sizes=True)
-         # see https://github.com/PyTorchLightning/pytorch-lightning/pull/1896
-         self.lr = lr
-         self.lr_backbone = lr_backbone
-         self.weight_decay = weight_decay
+          # Save checkpoints
+          self.checkpoint_dir = checkpoint_dir
+          self.checkpoint_callback = ModelCheckpoint(
+          dirpath=self.checkpoint_dir,
+          filename="detr-test-{epoch:02d}-{val_loss:.2f}",
+          save_top_k=3,  # Save checkpoints for all epochs
+          monitor="validation_loss",
+          save_last=True,  # Save the last model checkpoint
+          every_n_epochs = 2  # Save the model every 2 epochs
+          )
 
      def forward(self, pixel_values, pixel_mask):
        outputs = self.model(pixel_values=pixel_values, pixel_mask=pixel_mask)
@@ -196,7 +203,7 @@ outputs = model(pixel_values=batch['pixel_values'], pixel_mask=batch['pixel_mask
 
 
 #gpus=1, 
-trainer = Trainer(max_steps=num_steps, gradient_clip_val=0.1, default_root_dir = "./Bambi/checkpoints/default")
+trainer = Trainer(max_steps=num_steps, gradient_clip_val=0.1, default_root_dir = "./Bambi/checkpoints/default", callbacks=[model.checkpoint_callback], accelerator="gpu")
 trainer.fit(model)
 
 
@@ -216,8 +223,6 @@ trainer.save_checkpoint("./Bambi/checkpoints/detr_model_epoch:"
       + ".ckpt")
 
 
-import subprocess
-subprocess.run("nvidia-smi")
 
 
 
