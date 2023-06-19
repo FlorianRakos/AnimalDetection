@@ -12,21 +12,41 @@ from pytorch_lightning import Trainer
 from tqdm.notebook import tqdm
 from datetime import datetime
 from pytorch_lightning.callbacks import ModelCheckpoint
+import argparse
 
+
+# can be edited to improve performance with pay-off of lower precision
 torch.set_float32_matmul_precision("high")
 
 # config
 # 50000steps = 600 epochs
-
 lr=1e-4
 lr_backbone=1e-5
 weight_decay=1e-4
 batch_size=32
-num_steps=1000
-
+num_steps=15000
 img_folder = "./Bambi/data"
 ann_folder = "./Bambi/data/annotations"
-checkpoint_dir = "./Bambi/checkpoints"
+checkpoint_dir = "./Bambi/checkpoints/resnet-50"
+modelName = "facebook/detr-resnet-50"
+
+
+parser = argparse.ArgumentParser(description='Train DETR model')
+parser.add_argument('-l', '--large', action='store_true', help='train large resnet-101-model')
+args = parser.parse_args()
+trainLarge = args.large
+
+if (trainLarge):
+  print("///////// Training large resnet-101 model \\\\\\\\\\")
+
+  modelName = "facebook/detr-resnet-101"
+  checkpoint_dir = "./Bambi/checkpoints/resnet-101"
+  # lr=1e-5
+  # lr_backbone=1e-6
+  # weight_decay=1e-5
+  # batch_size=16
+  # num_steps=50000
+
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
@@ -50,7 +70,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 
-feature_extractor = DetrFeatureExtractor.from_pretrained("facebook/detr-resnet-50")
+feature_extractor = DetrFeatureExtractor.from_pretrained(modelName)
 
 train_dataset = CocoDetection(img_folder=f'{img_folder}/train', feature_extractor=feature_extractor)
 val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
@@ -115,7 +135,7 @@ class Detr(pl.LightningModule):
      def __init__(self, lr, lr_backbone, weight_decay):
           super().__init__()
 
-          self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
+          self.model = DetrForObjectDetection.from_pretrained(modelName, 
                                                               num_labels=len(id2label),
                                                               ignore_mismatched_sizes=True)
           self.lr = lr
@@ -126,11 +146,11 @@ class Detr(pl.LightningModule):
           self.checkpoint_dir = checkpoint_dir
           self.checkpoint_callback = ModelCheckpoint(
           dirpath=self.checkpoint_dir,
-          filename="detr-test-{epoch:02d}-{val_loss:.2f}",
-          save_top_k=3,  # Save checkpoints for all epochs
+          filename="detr-test-{epoch:03d}-{validation_loss:.2f}",
+          save_top_k=3,
           monitor="validation_loss",
           save_last=True,  # Save the last model checkpoint
-          every_n_epochs = 2  # Save the model every 2 epochs
+          every_n_epochs = 10  # Save the model every 10 epochs
           )
 
      def forward(self, pixel_values, pixel_mask):
