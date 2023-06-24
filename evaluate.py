@@ -1,8 +1,3 @@
-
-# !git clone https://github.com/facebookresearch/detr.git
-# %cd detr
-
-#import detr
 from datasets import get_coco_api_from_dataset
 from datasets.coco_eval import CocoEvaluator
 from tqdm.notebook import tqdm
@@ -17,6 +12,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 
+# can be edited to improve performance with pay-off of lower precision
 torch.set_float32_matmul_precision("high")
 
 img_folder = "../Bambi/data"
@@ -37,6 +33,7 @@ args = parser.parse_args()
 evaluateAll = args.all
 makeImages = args.images
 
+numResults = 20 # number of images to annotate with model predictions
 
 def collate_fn(batch):
   pixel_values = [item[0] for item in batch]
@@ -73,17 +70,10 @@ class Detr(pl.LightningModule):
 
      def __init__(self, lr, lr_backbone, weight_decay):
          super().__init__()
-         # replace COCO classification head with custom head
-
-         # evtl deep copy zum laden von model
-         # model.state_dict()
-         # torch.save()
-         # model = LitModel.load_from_checkpoint(PATH)
 
          self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
                                                              num_labels=len(test_dataset.coco.getCatIds()),
                                                              ignore_mismatched_sizes=True)
-         # see https://github.com/PyTorchLightning/pytorch-lightning/pull/1896
          self.lr = lr
          self.lr_backbone = lr_backbone
          self.weight_decay = weight_decay
@@ -121,7 +111,6 @@ class Detr(pl.LightningModule):
         for k,v in loss_dict.items():
           self.log("validation_" + k, v.item())
 
-        #print("Validationsloss: ", loss)
         return loss
 
      def configure_optimizers(self):
@@ -156,11 +145,12 @@ base_ds = get_coco_api_from_dataset(test_dataset) # this is actually just callin
 cats = test_dataset.coco.cats
 id2label = {k: v['name'] for k,v in cats.items()}
 
-#%cd ..
+
 iou_types = ['bbox']
 coco_evaluator = CocoEvaluator(base_ds, iou_types) # initialize evaluator with ground truths
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 
 #----------------- STATISTICS -----------------#
@@ -168,14 +158,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 loadDir = "../Bambi/checkpoints/load"
 files = os.listdir(loadDir)
-print("Files: ", files)
+files = [file for file in files if file.endswith(".ckpt")] # filter for files with .ckpt ending
+
+
 if (evaluateAll):
   for file in files:
     print("Evaluating: ", file)
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
     model = Detr.load_from_checkpoint(loadDir + "/" + file, lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
-    # Ensure model weights are of type cuda float
-    model.cuda()
+    
+    model.cuda() # Ensure model weights are of type cuda float
+
     for idx, batch in enumerate(tqdm(test_dataloader)):
       # get the inputs
       pixel_values = batch["pixel_values"].to(device)
@@ -196,34 +189,33 @@ if (evaluateAll):
 
     print("Model " + file + " evaluated")
 
-  print("All models evaluated")
+
   exit()
 else:
 
-  # if (len(files) > 1):
-  #     raise Exception("Only 1 file allowed in folder")
-
   model = Detr.load_from_checkpoint(loadDir + "/" + files[0], lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
-  # Ensure model weights are of type cuda float
-  model.cuda() 
+  
+  model.cuda()   # Ensure model weights are of type cuda float
 
-  for idx, batch in enumerate(tqdm(test_dataloader)):
+
+  if (not makeImages):
+    for idx, batch in enumerate(tqdm(test_dataloader)):
       # get the inputs
       pixel_values = batch["pixel_values"].to(device)
       pixel_mask = batch["pixel_mask"].to(device)
-      labels = [{k: v.to(device) for k, v in t.items()} for t in batch["labels"]] # these are in DETR format, resized + normalized
+      labels = [{k: v.to(device) for k, v in t.items()} for t in batch["labels"]]   # these are in DETR format, resized + normalized
 
       # forward pass
       outputs = model.model(pixel_values=pixel_values, pixel_mask=pixel_mask)
 
       orig_target_sizes = torch.stack([target["orig_size"] for target in labels], dim=0)
-      results = feature_extractor.post_process(outputs, orig_target_sizes) # convert outputs of model to COCO api
+      results = feature_extractor.post_process(outputs, orig_target_sizes)   # convert outputs of model to COCO api
       res = {target['image_id'].item(): output for target, output in zip(labels, results)}
       coco_evaluator.update(res)
 
-  coco_evaluator.synchronize_between_processes()
-  coco_evaluator.accumulate()
-  coco_evaluator.summarize()
+    coco_evaluator.synchronize_between_processes()
+    coco_evaluator.accumulate()
+    coco_evaluator.summarize()
 
 
 
@@ -266,13 +258,13 @@ def plot_results(pil_img, prob, boxes, image_id):
         ax.text(xmin, ymin + yOffset, text, fontsize=10,
                 bbox=dict(facecolor='yellow', alpha=0.1))
     plt.axis('off')
-    plt.savefig("./results/Image-" + str(image_id) + "-P.png")
+    plt.savefig("../results/Image-" + str(image_id) + "-P.png")
 
 
     plt.figure(figsize=(16,10))
     plt.imshow(pil_img)
 
-    annotations = val_dataset.coco.imgToAnns[image_id]
+    annotations = test_dataset.coco.imgToAnns[image_id]
 
     for ann, c in zip(annotations, colors):
       label_box = ann['bbox']
@@ -286,12 +278,12 @@ def plot_results(pil_img, prob, boxes, image_id):
                 bbox=dict(facecolor='yellow', alpha=0.1))
 
       plt.axis('off')
-      plt.savefig("./results/Image-" + str(image_id) + "-GT.png")
+      plt.savefig("../results/Image-" + str(image_id) + "-GT.png")
 
 
   
 
-def visualize_predictions(image, outputs, threshold=0.9, keep_highest_scoring_bbox=False, image_id=None):
+def visualize_predictions(image, outputs, threshold=0.5, keep_highest_scoring_bbox=False, image_id=None):
   # keep only predictions with confidence >= threshold
   probas = outputs.logits.softmax(-1)[0, :, :-1]
   keep = probas.max(-1).values > threshold
@@ -307,8 +299,8 @@ def visualize_predictions(image, outputs, threshold=0.9, keep_highest_scoring_bb
 
 
 
-for  i in range(20):
-  pixel_values, target = val_dataset[i]
+for  i in range(numResults):
+  pixel_values, target = test_dataset[i]
 
   pixel_values = pixel_values.unsqueeze(0).to(device)
 
@@ -316,7 +308,7 @@ for  i in range(20):
   outputs = model(pixel_values=pixel_values, pixel_mask=None)
 
   image_id = target['image_id'].item()
-  image = val_dataset.coco.loadImgs(image_id)[0]
-  image = Image.open(os.path.join(f'{img_folder}/val', image['file_name']))
+  image = test_dataset.coco.loadImgs(image_id)[0]
+  image = Image.open(os.path.join(f'{img_folder}/test', image['file_name']))
 
   visualize_predictions(image, outputs, threshold=0.9, keep_highest_scoring_bbox=False, image_id=image_id)

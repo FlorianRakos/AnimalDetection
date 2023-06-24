@@ -31,6 +31,7 @@ checkpoint_dir = "./Bambi/checkpoints/resnet-50"
 modelName = "facebook/detr-resnet-50"
 
 
+
 parser = argparse.ArgumentParser(description='Train DETR model')
 parser.add_argument('-l', '--large', action='store_true', help='train large resnet-101-model')
 args = parser.parse_args()
@@ -50,7 +51,7 @@ if (trainLarge):
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
-        ann_file = os.path.join(ann_folder, "train-combined.json" if train else "validation.json")
+        ann_file = os.path.join(ann_folder, "train.json" if train else "validation.json")
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self.feature_extractor = feature_extractor
 
@@ -222,7 +223,6 @@ outputs = model(pixel_values=batch['pixel_values'], pixel_mask=batch['pixel_mask
 # -------------- Train Model -------------- #
 
 
-#gpus=1, 
 trainer = Trainer(max_steps=num_steps, gradient_clip_val=0.1, default_root_dir = "./Bambi/checkpoints/default", callbacks=[model.checkpoint_callback], accelerator="gpu")
 trainer.fit(model)
 
