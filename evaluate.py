@@ -17,6 +17,8 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 
+torch.set_float32_matmul_precision("high")
+
 img_folder = "../Bambi/data"
 ann_folder = "../Bambi/data/annotations"
 
@@ -25,8 +27,16 @@ lr_backbone=1e-5
 weight_decay=1e-4
 batch_size=16
 
-showStatistics = True
-makeImages = True
+# parameters 
+import argparse
+parser = argparse.ArgumentParser(description='Evaluate DETR model')
+parser.add_argument('-a', '--all', action='store_true', help='evaluate all models in load directory')
+parser.add_argument('-i', '--images', action='store_true', help='make result images')
+args = parser.parse_args()
+
+evaluateAll = args.all
+makeImages = args.images
+
 
 def collate_fn(batch):
   pixel_values = [item[0] for item in batch]
@@ -41,7 +51,7 @@ def collate_fn(batch):
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
-        ann_file = os.path.join(ann_folder, "train-combined.json" if train else "validation.json")
+        ann_file = os.path.join(ann_folder, "train-combined.json" if train else "test.json")
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self.feature_extractor = feature_extractor
 
@@ -71,7 +81,7 @@ class Detr(pl.LightningModule):
          # model = LitModel.load_from_checkpoint(PATH)
 
          self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
-                                                             num_labels=len(val_dataset.coco.getCatIds()),
+                                                             num_labels=len(test_dataset.coco.getCatIds()),
                                                              ignore_mismatched_sizes=True)
          # see https://github.com/PyTorchLightning/pytorch-lightning/pull/1896
          self.lr = lr
@@ -136,13 +146,14 @@ class Detr(pl.LightningModule):
 
 
 feature_extractor = DetrFeatureExtractor.from_pretrained("facebook/detr-resnet-50")
-val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
-val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=batch_size)
-val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
+#val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
+#val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=batch_size)
+test_dataset = CocoDetection(img_folder=f'{img_folder}/test', feature_extractor=feature_extractor, train=False)
+test_dataloader = DataLoader(test_dataset, collate_fn=collate_fn, batch_size=batch_size)
 
-base_ds = get_coco_api_from_dataset(val_dataset) # this is actually just calling the coco attribute
+base_ds = get_coco_api_from_dataset(test_dataset) # this is actually just calling the coco attribute
 
-cats = val_dataset.coco.cats
+cats = test_dataset.coco.cats
 id2label = {k: v['name'] for k,v in cats.items()}
 
 #%cd ..
@@ -152,23 +163,51 @@ coco_evaluator = CocoEvaluator(base_ds, iou_types) # initialize evaluator with g
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-#----------------- LOAD MODEL -----------------#
+#----------------- STATISTICS -----------------#
 
 
 loadDir = "../Bambi/checkpoints/load"
 files = os.listdir(loadDir)
+print("Files: ", files)
+if (evaluateAll):
+  for file in files:
+    print("Evaluating: ", file)
+    coco_evaluator = CocoEvaluator(base_ds, iou_types)
+    model = Detr.load_from_checkpoint(loadDir + "/" + file, lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
+    # Ensure model weights are of type cuda float
+    model.cuda()
+    for idx, batch in enumerate(tqdm(test_dataloader)):
+      # get the inputs
+      pixel_values = batch["pixel_values"].to(device)
+      pixel_mask = batch["pixel_mask"].to(device)
+      labels = [{k: v.to(device) for k, v in t.items()} for t in batch["labels"]] # these are in DETR format, resized + normalized
 
-if (len(files) > 1):
-    raise Exception("Only 1 file allowed in folder")
+      # forward pass
+      outputs = model.model(pixel_values=pixel_values, pixel_mask=pixel_mask)
 
-model = Detr.load_from_checkpoint(loadDir + "/" + files[0], lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
+      orig_target_sizes = torch.stack([target["orig_size"] for target in labels], dim=0)
+      results = feature_extractor.post_process(outputs, orig_target_sizes) # convert outputs of model to COCO api
+      res = {target['image_id'].item(): output for target, output in zip(labels, results)}
+      coco_evaluator.update(res)
 
+    coco_evaluator.synchronize_between_processes()
+    coco_evaluator.accumulate()
+    coco_evaluator.summarize()
 
-#----------------- STATISTICS -----------------#
+    print("Model " + file + " evaluated")
 
-if (showStatistics):
+  print("All models evaluated")
+  exit()
+else:
 
-  for idx, batch in enumerate(tqdm(val_dataloader)):
+  # if (len(files) > 1):
+  #     raise Exception("Only 1 file allowed in folder")
+
+  model = Detr.load_from_checkpoint(loadDir + "/" + files[0], lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
+  # Ensure model weights are of type cuda float
+  model.cuda() 
+
+  for idx, batch in enumerate(tqdm(test_dataloader)):
       # get the inputs
       pixel_values = batch["pixel_values"].to(device)
       pixel_mask = batch["pixel_mask"].to(device)
@@ -187,9 +226,11 @@ if (showStatistics):
   coco_evaluator.summarize()
 
 
+
 #----------------- VISUALIZATION -----------------#
 
-if (not makeImages):
+if (not makeImages or evaluateAll):
+  print("Only produce results if makeImages is True and evaluateAll is False")
   exit()
 
 # colors for visualization
