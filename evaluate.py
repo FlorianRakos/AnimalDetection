@@ -18,6 +18,8 @@ torch.set_float32_matmul_precision("high")
 img_folder = "../Bambi/data"
 ann_folder = "../Bambi/data/annotations"
 
+modelName = "facebook/detr-resnet-50"
+
 lr=1e-4
 lr_backbone=1e-5
 weight_decay=1e-4
@@ -71,7 +73,7 @@ class Detr(pl.LightningModule):
      def __init__(self, lr, lr_backbone, weight_decay):
          super().__init__()
 
-         self.model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", 
+         self.model = DetrForObjectDetection.from_pretrained(modelName, 
                                                              num_labels=len(test_dataset.coco.getCatIds()),
                                                              ignore_mismatched_sizes=True)
          self.lr = lr
@@ -134,7 +136,7 @@ class Detr(pl.LightningModule):
 
 
 
-feature_extractor = DetrFeatureExtractor.from_pretrained("facebook/detr-resnet-50")
+feature_extractor = DetrFeatureExtractor.from_pretrained(modelName)
 #val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
 #val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=batch_size)
 test_dataset = CocoDetection(img_folder=f'{img_folder}/test', feature_extractor=feature_extractor, train=False)
@@ -277,8 +279,10 @@ def plot_results(pil_img, prob, boxes, image_id):
       ax.text(label_box[0], label_box[1] + yOffset, text, fontsize=10,
                 bbox=dict(facecolor='yellow', alpha=0.1))
 
-      plt.axis('off')
-      plt.savefig("../results/Image-" + str(image_id) + "-GT.png")
+    plt.axis('off')
+    plt.savefig("../results/Image-" + str(image_id) + "-GT.png")
+
+
 
 
   
@@ -299,6 +303,9 @@ def visualize_predictions(image, outputs, threshold=0.5, keep_highest_scoring_bb
 
 
 
+import time
+start = time.time()
+
 for  i in range(numResults):
   pixel_values, target = test_dataset[i]
 
@@ -312,3 +319,7 @@ for  i in range(numResults):
   image = Image.open(os.path.join(f'{img_folder}/test', image['file_name']))
 
   visualize_predictions(image, outputs, threshold=0.9, keep_highest_scoring_bbox=False, image_id=image_id)
+
+
+end = time.time()
+print("Time elapsed: " + str(end - start))
