@@ -15,39 +15,38 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import argparse
 
 
-# can be edited to improve performance with pay-off of lower precision
-torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision("high")   # can be edited to improve performance with pay-off of lower precision
 
-# config
-# 50000steps = 600 epochs
 lr=1e-4
 lr_backbone=1e-5
 weight_decay=1e-4
 batch_size=32
-num_steps=15000
+num_steps=15000   # 50000steps ~ 600 epochs
 img_folder = "./Bambi/data"
 ann_folder = "./Bambi/data/annotations"
 checkpoint_dir = "./Bambi/checkpoints/resnet-50"
+continue_training_dir = "./Bambi/checkpoints/continueTraining"
 modelName = "facebook/detr-resnet-50"
-
 
 
 parser = argparse.ArgumentParser(description='Train DETR model')
 parser.add_argument('-l', '--large', action='store_true', help='train large resnet-101-model')
+parser.add_argument('-c', '--continue-training', action='store_true', help='continue training from checkpoint')
 args = parser.parse_args()
 trainLarge = args.large
+continueTraining = args.continue_training
+
 
 if (trainLarge):
   print("///////// Training large resnet-101 model \\\\\\\\\\")
-
   modelName = "facebook/detr-resnet-101"
   checkpoint_dir = "./Bambi/checkpoints/resnet-101"
-  # lr=1e-5
-  # lr_backbone=1e-6
-  # weight_decay=1e-5
-  # batch_size=16
-  # num_steps=50000
 
+if (continueTraining):
+  print("///////// Continuing training from checkpoint \\\\\\\\\\")
+  files = os.listdir(continue_training_dir)
+  files = [file[:-5] for file in files]   # remove .ckpt from string
+  checkpoint_dir = checkpoint_dir + "/continue-" + files[0] + "/"
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, feature_extractor, train=True):
@@ -70,17 +69,14 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 
-
 feature_extractor = DetrFeatureExtractor.from_pretrained(modelName)
 
 train_dataset = CocoDetection(img_folder=f'{img_folder}/train', feature_extractor=feature_extractor)
 val_dataset = CocoDetection(img_folder=f'{img_folder}/val', feature_extractor=feature_extractor, train=False)
 
 
-
 # print("Number of training examples:", len(train_dataset))
 # print("Number of validation examples:", len(val_dataset))
-
 
 
 # based on https://github.com/woctezuma/finetune-detr/blob/master/finetune_detr.ipynb
@@ -105,8 +101,6 @@ for annotation in annotations:
   draw.text((x, y), id2label[class_idx], fill='white')
 
 
-
-
 # prepares the batch data
 def collate_fn(batch):
   pixel_values = [item[0] for item in batch]
@@ -123,11 +117,8 @@ val_dataloader = DataLoader(val_dataset, collate_fn=collate_fn, batch_size=batch
 batch = next(iter(train_dataloader))
 
 
-
 pixel_values, target = train_dataset[0]
 #print(train_dataset[0])
-
-
 
 
 
@@ -147,11 +138,11 @@ class Detr(pl.LightningModule):
           self.checkpoint_dir = checkpoint_dir
           self.checkpoint_callback = ModelCheckpoint(
           dirpath=self.checkpoint_dir,
-          filename="detr-test-{epoch:03d}-{validation_loss:.2f}",
-          save_top_k=3,
+          filename="detr-model-{epoch:03d}-{validation_loss:.2f}",
+          save_top_k=10,
           monitor="validation_loss",
           save_last=True,  # Save the last model checkpoint
-          every_n_epochs = 10  # Save the model every 10 epochs
+          every_n_epochs = 20 
           )
 
      def forward(self, pixel_values, pixel_mask):
@@ -212,8 +203,14 @@ class Detr(pl.LightningModule):
 
 
 
+if (continueTraining): 
+  files = os.listdir(continue_training_dir)
+  if len(files) > 1:
+    raise Exception("Only one checkpoint file allowed int continueTraining folder!")
+  model = Detr.load_from_checkpoint(os.path.join(continue_training_dir, files[0]), lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
+else:
+  model = Detr(lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
 
-model = Detr(lr=lr, lr_backbone=lr_backbone, weight_decay=weight_decay)
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # model.to(device)
 outputs = model(pixel_values=batch['pixel_values'], pixel_mask=batch['pixel_mask'])
@@ -236,7 +233,7 @@ dateStr = dateStr.replace("/", "-")
 
 
 
-trainer.save_checkpoint("./Bambi/checkpoints/detr_model_epoch:"
+trainer.save_checkpoint(checkpoint_dir  +"/detr_model_epoch:"
       + str(trainer.current_epoch)
       + "_"
       + dateStr
