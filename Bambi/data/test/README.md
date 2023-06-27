@@ -1,0 +1,1 @@
+This is the folder for storing testing images or images you want to annotate by using the evaluate.py -i

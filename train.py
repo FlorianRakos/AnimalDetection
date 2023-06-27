@@ -38,12 +38,12 @@ continueTraining = args.continue_training
 
 
 if (trainLarge):
-  print("///////// Training large resnet-101 model \\\\\\\\\\")
+  print("///////// Training large resnet-101 model /////////")
   modelName = "facebook/detr-resnet-101"
   checkpoint_dir = "./Bambi/checkpoints/resnet-101"
 
 if (continueTraining):
-  print("///////// Continuing training from checkpoint \\\\\\\\\\")
+  print("///////// Continuing training from checkpoint /////////")
   files = os.listdir(continue_training_dir)
   files = [file[:-5] for file in files]   # remove .ckpt from string
   checkpoint_dir = checkpoint_dir + "/continue-" + files[0] + "/"

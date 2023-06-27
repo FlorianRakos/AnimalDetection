@@ -1,0 +1,1 @@
+In this folder you can put models you want to evaluate or one one model you want to use, to annotate images.
