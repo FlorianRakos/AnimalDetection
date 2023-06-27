@@ -1,0 +1,1 @@
+This is the folder that images that have been annotated by the evaluate.py, get saved to.

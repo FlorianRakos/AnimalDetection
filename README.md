@@ -5,12 +5,15 @@ Es verwendet das pretrained detr-resnet-50 Object detection modell von facebook.
 
 ## Wie kann ein Modell trainiert werden?
 
-1. Docker Container aufsetzen dafür wurde folgender verwendet:
-    nvidia-docker run --gpus "device=0" -it --rm -v "$(pwd)"/AnimalDetection:/workspace/bambi nvcr.io/partners/gridai/pytorch-lightning:v1.4.0
+1. Docker Container aufsetzen dafür wurde folgender verwendet (funktioniert nur auf Linux):
+nvidia-docker run --gpus "device=0" -it --rm -v "$(pwd)"/AnimalDetection:/workspace/bambi nvcr.io/partners/gridai/pytorch-lightning:v1.4.0
 
 
 2. Pip packages installieren
-    -> siehe requirements.txt
+-> siehe requirements.txt (es kommt aber oft zu einem OS Error)
+Ansonsten manuell:
+pip install timm pycocotools scipy
+pip install -U pytorch-lightning transformers torchvision
 
 3. Bild daten in /data/train und /data/val ablegen. Die dazugehörigen Annotations in /data/annotations als train.json und validation.json in Coco V1 format speichern.
 
